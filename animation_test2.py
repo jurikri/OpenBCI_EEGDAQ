@@ -22,7 +22,7 @@ if False:
             print(f"{package_name} is already installed.")
     
     # 패키지 이름 설정
-    package_names = ['pyOpenBCI', 'matplotlib', 'numpy', 'xmltodict']
+    package_names = ['pyOpenBCI', 'matplotlib', 'numpy', 'xmltodict', 'pyserial', 'requests']
     for package_name in package_names:
         install_package(package_name)
 
