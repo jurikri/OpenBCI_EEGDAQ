@@ -193,15 +193,22 @@ class MultiChannelEEGPlot:
         self.start_time = time.time()  # 그래프 업데이트 시작 시간 기록
         self.queue = queue
         self.is_running = True  # 여기에서 is_running 속성을 정의
-        
         self.update_counter = 0  # 이 카운터로 업데이트 간격을 조절
+        self.downsample_factor = 2  # 다운샘플링을 위한 인자
 
         for ax in self.axs:
-            ax.set_xlim(0, self.num_samples - 1)
+            ax.set_xlim(0, self.num_samples // self.downsample_factor)
             ax.set_ylim(-8000, 8000)
 
     def update_plot(self):
+        sample_rate = 250  # 샘플레이트, 예를 들어 250Hz
+        window_size = 5 * sample_rate  # 5초간의 데이터 수, 예: 5 * 250 = 1250
+        update_y_axis_interval = 5  # y축 업데이트 간격, 초 단위
+        # smoothing_window = 50  # 스무딩을 위한 데이터 윈도우 크기
+        last_update_time = time.time()
+
         while self.is_running:
+            current_time = time.time()
             try:
                 data = self.queue.get_nowait()  # 큐에서 데이터 가져오기
                 # 데이터를 내부 버퍼에 추가하는 코드
@@ -213,8 +220,22 @@ class MultiChannelEEGPlot:
                 
                 if self.update_counter >= self.update_interval:
                     for channel in self.channels:
-                        self.lines[channel].set_data(np.arange(self.num_samples), self.data[channel])
-                    # 남은 시간 계산 및 표시 코드...
+                        downsampled_data = self.data[channel][::self.downsample_factor]
+                        self.lines[channel].set_data(np.arange(len(downsampled_data)), downsampled_data)
+                    
+                    # 매 5초마다 y축 업데이트
+                    if current_time - last_update_time >= update_y_axis_interval:
+                        for channel in self.channels:
+                            # 최근 5초간의 데이터 선택
+                            recent_data = self.data[channel][-window_size:]
+                            mean = np.mean(recent_data)
+                            std = np.std(recent_data)
+                            lower_bound = mean - 3*std
+                            upper_bound = mean + 3*std
+                            self.axs[channel].set_ylim(lower_bound, upper_bound)
+                        
+                        last_update_time = current_time
+
                     self.fig.canvas.draw()
                     self.fig.canvas.flush_events()
                     self.update_counter = 0  # 카운터 리셋
@@ -230,9 +251,11 @@ def data_collection(queue):
     callback_count = 0  # callback 함수 호출 횟수를 저장할 변수
     full_data = []  # 모든 데이터를 누적할 리스트
     start_time = None  # 첫 callback 호출 시간
+    save_interval = 60  # 데이터 저장 간격 (초)
+    last_save_time = time.time()  # 마지막 저장 시간
 
     def callback(sample):
-        nonlocal callback_count, start_time
+        nonlocal callback_count, start_time, last_save_time
         if start_time is None:
             start_time = time.time()  # 첫 callback 시간 기록
 
@@ -246,26 +269,30 @@ def data_collection(queue):
             start_time = current_time
 
         # 샘플 데이터를 리스트로 변환하여 누적
-        data = [sample.channels_data[channel] for channel in range(8)]
+        current_time = time.time()
+        data = [sample.channels_data[channel] for channel in range(8)] + [current_time] 
         full_data.append(data)  # 누적 데이터에 추가
         queue.put(data)  # GUI 업데이트를 위해 큐에 데이터 추가
+        
+        if current_time - last_save_time >= save_interval:
+            filename = datetime.now().strftime("C:\\mscode\\test\\data\\%Y-%m-%d_%H-%M-%S.pkl")
+            with open(filename, 'wb') as file:
+                pickle.dump(full_data, file)
+                print(f"Data saved to {filename}")
+                full_data.clear()  # 저장 후 데이터 클리어
+            last_save_time = current_time
 
-    board = OpenBCICyton(port='COM4', daisy=False)
+
+    board = OpenBCICyton(port='COM3', daisy=False)
     board.start_stream(callback)
 
-    # 60초 동안 데이터 수집 실행
-    time.sleep(60)
-    board.stop_stream()  # 스트림 중지
-
-    # 데이터 저장
-    filename = datetime.now().strftime("C:\\mscode\\test\\data\\%Y-%m-%d_%H-%M-%S.pkl")
-    with open(filename, 'wb') as file:
-        pickle.dump(full_data, file)
-    print(f"Data saved to {filename}")
-
-    print("Data collection finished. Exiting program.")
-    sys.exit()  # 프로그램 종료
-
+    # 데이터 수집은 사용자가 종료할 때까지 계속 실행
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        board.stop_stream()  # 사용자 인터럽트에 의해 스트림 중지
+        print("Data collection finished. Exiting program.")
 
 if __name__ == "__main__":
     data_queue = multiprocessing.Queue()
@@ -279,14 +306,6 @@ if __name__ == "__main__":
     finally:
         plot.stop()
         data_process.join()
-
-
-# if __name__ == "__main__":
-#     data_queue = multiprocessing.Queue()
-#     data_process = multiprocessing.Process(target=data_collection, args=(data_queue,))
-#     data_process.start()
-#     data_process.join()  # 데이터 수집 프로세스가 완료될 때까지 기다림
-
 
 
 
