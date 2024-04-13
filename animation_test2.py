@@ -178,6 +178,8 @@ import sys
 import multiprocessing
 import time
 import queue
+import os
+current_path = os.getcwd()
 
 plt.ion()
 
@@ -275,15 +277,15 @@ def data_collection(queue):
         queue.put(data)  # GUI 업데이트를 위해 큐에 데이터 추가
         
         if current_time - last_save_time >= save_interval:
-            filename = datetime.now().strftime("C:\\mscode\\test\\data\\%Y-%m-%d_%H-%M-%S.pkl")
+            filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S.pkl")
+            filename = os.path.join(current_path, 'data', filename)
             with open(filename, 'wb') as file:
                 pickle.dump(full_data, file)
                 print(f"Data saved to {filename}")
                 full_data.clear()  # 저장 후 데이터 클리어
             last_save_time = current_time
 
-
-    board = OpenBCICyton(port='COM3', daisy=False)
+    board = OpenBCICyton(port='COM6', daisy=False)
     board.start_stream(callback)
 
     # 데이터 수집은 사용자가 종료할 때까지 계속 실행
